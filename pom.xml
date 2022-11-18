@@ -18,7 +18,6 @@
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
-
     <dependencies>
         <dependency>
             <groupId>cglib</groupId>
@@ -26,4 +25,5 @@
             <version>3.3.0</version>
         </dependency>
     </dependencies>
+
 </project>
