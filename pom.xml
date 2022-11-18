@@ -7,9 +7,10 @@
     <groupId>cn.annacode.youngStart.org</groupId>
     <artifactId>annacode-young-start</artifactId>
     <packaging>pom</packaging>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0</version>
     <modules>
         <module>young-start-framework</module>
+        <module>start-up</module>
     </modules>
 
     <properties>
