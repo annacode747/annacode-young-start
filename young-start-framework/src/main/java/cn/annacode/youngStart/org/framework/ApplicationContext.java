@@ -1,21 +1,25 @@
 package cn.annacode.youngStart.org.framework;
 
-import cn.annacode.youngStart.org.framework.annotation.Component;
-import cn.annacode.youngStart.org.framework.annotation.ComponentScan;
-import cn.annacode.youngStart.org.framework.annotation.Lazy;
-import cn.annacode.youngStart.org.framework.annotation.Scope;
+import cn.annacode.youngStart.org.framework.annotation.*;
 import cn.annacode.youngStart.org.framework.config.BeanDefinition;
 import cn.annacode.youngStart.org.framework.enumerate.ScopeType;
 import cn.annacode.youngStart.org.framework.exception.NullBeanException;
+import cn.annacode.youngStart.org.framework.exception.ScanException;
+import cn.annacode.youngStart.org.framework.interfaces.ApplicationContextAware;
+import cn.annacode.youngStart.org.framework.interfaces.BeanNameAware;
+import cn.annacode.youngStart.org.framework.interfaces.BeanPostProcessor;
+import cn.annacode.youngStart.org.framework.interfaces.InitializingBean;
+import net.sf.cglib.proxy.Enhancer;
+import net.sf.cglib.proxy.MethodInterceptor;
+import net.sf.cglib.proxy.MethodProxy;
 
 import java.beans.Introspector;
 import java.io.File;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.URL;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 public class ApplicationContext {
 
@@ -23,6 +27,8 @@ public class ApplicationContext {
 
     // 单例池
     private Map<String, Object> singletonObject = new HashMap<>();
+
+    private ArrayList<BeanPostProcessor> beanPostProcessorList = new ArrayList<>();
 
     /**
      * 配置容器
@@ -35,21 +41,88 @@ public class ApplicationContext {
         for (String beanName : beanDefinitionMap.keySet()) {
             BeanDefinition beanDefinition = beanDefinitionMap.get(beanName);
             if (!beanDefinition.isLazy() && ScopeType.SINGLETON.getType().equals(beanDefinition.getScope())){
-                // createBean 创建Bean
-                Object bean = createBean(beanName,beanDefinition);
-                // 存放单例池
-                singletonObject.put(beanName,bean);
+                if (singletonObject.containsKey(beanName)){
+                    // createBean 创建Bean
+                    Object bean = createBean(beanName,beanDefinition);
+                    // 存放单例池
+                    singletonObject.put(beanName,bean);
+                }
             }
         }
-        System.out.println(beanDefinitionMap);
-        System.out.println(singletonObject);
+        System.out.println("beanDefinitionMap ===> "+beanDefinitionMap);
+        System.out.println("singletonObject ===> "+singletonObject);
+        System.out.println("beanPostProcessorList === > "+beanPostProcessorList);
     }
 
     public Object createBean(String beanName, BeanDefinition beanDefinition){
         Class type = beanDefinition.getType();
-        Object instance = null;
+        Object instance;
         try {
             instance = type.getDeclaredConstructor().newInstance();
+
+            // 依赖注入
+            for (Field field : type.getDeclaredFields()) {
+                if (field.isAnnotationPresent(Autowired.class)){
+                    // 反射标记
+                    field.setAccessible(true);
+//                    System.out.println("field.getType().getName() == >"+field.getType().getName());
+                    Object bean =  getBean(getBeanName(field.getType()));
+                    field.set(instance,bean);
+                }
+            }
+
+            // 回调
+            //      容器 回调
+            if (instance instanceof ApplicationContextAware){
+                ((ApplicationContextAware)instance).setApplicationContext(this);
+            }
+            //      beanName 回调
+            if (instance instanceof BeanNameAware){
+                ((BeanNameAware)instance).setBeanName(beanName);
+            }
+
+            //
+            for (BeanPostProcessor beanPostProcessor : beanPostProcessorList) {
+                instance = beanPostProcessor.postProcessBeforeInitialization(beanName,instance);
+            }
+
+            // 初始化
+            if (instance instanceof InitializingBean){
+                ((InitializingBean)instance).afterPropertiesSet();
+            }
+
+            for (BeanPostProcessor beanPostProcessor : beanPostProcessorList) {
+                instance = beanPostProcessor.postProcessAfterInitialization(beanName,instance);
+            }
+
+            // Bean
+
+            // aop 代理对象
+            if (type.isAnnotationPresent(Transactional.class)){
+                // 执行aop
+                Enhancer enhancer = new Enhancer();
+                enhancer.setSuperclass(type);
+                Object target = instance;
+                enhancer.setCallback(new MethodInterceptor() {
+                    @Override
+                    public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
+                        // 执行事务方法
+                        Object result = null;
+                        try {
+                            result = method.invoke(target,objects);
+                            //提交事务
+                            return result;
+                        }catch (Exception e){
+                            // 回滚事务
+                        }
+                        return result;
+                    }
+                });
+                instance = enhancer.create();
+            }
+
+
+            return instance;
         }catch (InstantiationException e){
             System.err.println("cannot instantiate ===> " + beanName);
             e.printStackTrace();
@@ -60,12 +133,54 @@ public class ApplicationContext {
         catch (NoSuchMethodException | InvocationTargetException e){
             e.printStackTrace();
         }
-        return instance;
+        return null;
+    }
+
+    /**
+     * 配置bean的名字 ，用于后期维护
+     * @param clazz 类
+     * @return name
+     */
+    private static String getBeanName(Class<?> clazz) {
+        return Introspector.decapitalize(clazz.getSimpleName());
+    }
+
+    /**
+     * 创建未使用注解创建的bean 未缓存
+     * @param clazz 类
+     * @return instance
+     */
+    public Object getBean(Class<?> clazz){
+        Object instance;
+        try {
+            instance = clazz.getDeclaredConstructor().newInstance();
+            for (Field field : clazz.getDeclaredFields()) {
+                if (field.isAnnotationPresent(Autowired.class)){
+                    // 反射标记
+                    field.setAccessible(true);
+//                    System.out.println("field.getType().getName() == >"+field.getType().getName());
+                    field.set(instance, getBean(field.getType()));
+                    getBean(field.getType());
+                }
+            }
+            // 创建依赖注入
+            return instance;
+        }catch (InstantiationException e){
+            System.err.println("cannot instantiate ===> " + clazz.getSimpleName());
+            e.printStackTrace();
+        }catch (IllegalAccessException e){
+            System.err.println("cannot access ===> " + clazz.getSimpleName());
+            e.printStackTrace();
+        }
+            catch (NoSuchMethodException | InvocationTargetException e){
+            e.printStackTrace();
+        }
+        return null;
     }
 
     private void scan(Class configClass) {
         defaultMainScan();
-        componentScan(configClass);
+//        componentScan(configClass);
     }
 
     /**
@@ -103,37 +218,61 @@ public class ApplicationContext {
      */
     private void URL_Scan(String path) {
         ClassLoader classLoader = this.getClass().getClassLoader();
+        if (!path.contains(".")){
+            try {
+                if (path.equals(""))
+                    throw new ScanException();
+                else
+                    throw new ScanException(path);
+            } catch (ScanException e) {
+                e.printStackTrace();
+            }
+            return;
+        }
         URL resource = classLoader.getResource(path.replace(".","/"));
-        scanFolder(classLoader, resource);
+        scanFolder(classLoader, resource,path.split("\\.")[0]);
     }
+
+
 
     /**
      * 递归文件夹下的bean
      * @param classLoader classLoader
      * @param resource URL
      */
-    private void scanFolder(ClassLoader classLoader, URL resource) {
+    private void scanFolder(ClassLoader classLoader, URL resource,String packageName) {
         File file = new File(resource.getFile());
         if (file.isDirectory()){
-            for (File FileList: Objects.requireNonNull(file.listFiles())){
+            for (File fi: Objects.requireNonNull(file.listFiles())){
                 try {
-                    String absolutePath = FileList.getAbsolutePath();
-                    if (!absolutePath.contains(".class")){
+                    String absolutePath = fi.getAbsolutePath();
+                    if (fi.isDirectory()){
                         // 当前是文件夹
-                        absolutePath = absolutePath.substring(absolutePath.indexOf("cn"));
+                        absolutePath = absolutePath.substring(absolutePath.indexOf(packageName));
                         if (absolutePath.contains("\\"))
                             absolutePath = absolutePath.replace("\\","/");
                         resource = classLoader.getResource(absolutePath);
-                        scanFolder(classLoader,resource);
+                        assert resource != null;
+                        scanFolder(classLoader,resource,packageName);
                         continue;
                     }
-                    absolutePath = absolutePath.substring(absolutePath.indexOf("cn"),absolutePath.indexOf(".class"));
+                    if (!absolutePath.contains(".class"))
+                        continue;
+                    absolutePath = absolutePath.substring(absolutePath.indexOf(packageName),absolutePath.indexOf(".class"));
                     if (absolutePath.contains("\\"))
                         absolutePath = absolutePath.replace("\\","/");
                     absolutePath = absolutePath.replace("/",".");
                     Class<?> clazz = classLoader.loadClass(absolutePath);
                     if (clazz.isAnnotationPresent(Component.class)){
-                        String beanName = Introspector.decapitalize(clazz.getSimpleName());
+                        // 设置bean对象的map name
+                        if (BeanPostProcessor.class.isAssignableFrom(clazz)){
+                            BeanPostProcessor instance = (BeanPostProcessor) clazz.getDeclaredConstructor().newInstance();
+                            beanPostProcessorList.add(instance);
+                        }
+                        String beanName = clazz.getAnnotation(Component.class).value();
+                        if (Objects.equals(beanName, "")){
+                            beanName = getBeanName(clazz);
+                        }
                         BeanDefinition beanDefinition = new BeanDefinition();
                         beanDefinition.setType(clazz);
                         beanDefinition.setLazy(clazz.isAnnotationPresent(Lazy.class));
@@ -151,6 +290,9 @@ public class ApplicationContext {
                 }catch (ClassNotFoundException e){
                     // 类加载异常 一般不用操作
 //                            System.err.println("类加载异常 ===> "+e.getMessage());
+                } catch (InvocationTargetException | InstantiationException | IllegalAccessException |
+                         NoSuchMethodException e) {
+                    throw new RuntimeException(e);
                 }
             }
         }
