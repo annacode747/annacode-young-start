@@ -1,7 +1,6 @@
 package cn.annacode.org.common.tool.tool;
 
 import lombok.Data;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -73,13 +72,6 @@ public class Sys {
         }
         inputStream.close();
         outputStream.close();
-//        BufferedReader bufferedReader = new BufferedReader(new FileReader("copyfile")); //读取文件内容
-//        String string;
-//        while ((string=bufferedReader.readLine()) != null){
-//            System.out.println(string);
-//        }
-
-//        bufferedReader.close();
     }
     /**
      * 获取当前项目路径
@@ -123,15 +115,9 @@ public class Sys {
             e.printStackTrace();
         }
     }
-    @Value("${jieba.path}")
     public static String jieba = "/JieBaWord";
 
-//    @Value("${jieba.path}")
-//    public void getJieBaPath(String name) {
-//        this.jieba = name;
-//    }
     public static String log = "out.log";
-//    private String Path = this.GetPath();
 
     /**
      * 将数据进行 MD5 加密，并以16进制字符串格式输出
@@ -196,7 +182,8 @@ public class Sys {
     }
 
     /**
-     * 將10進制轉換為16進制
+     * 將 10 進制轉換為 16 進制
+     *
      * @param numb
      * @return
      */
@@ -207,7 +194,7 @@ public class Sys {
     }
 
     /**
-     * 將16進制字符串轉換為10進制數字
+     * 將 16 進制字符串轉換為 10 進制數字
      * @param hexs
      * @return
      */

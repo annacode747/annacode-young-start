@@ -229,18 +229,35 @@ public class ApplicationContext {
             }
             return;
         }
-        URL resource = classLoader.getResource(path.replace(".","/"));
-        scanFolder(classLoader, resource,path.split("\\.")[0]);
+        URL resource = classLoader.getResource(path.replace(".", "/"));
+        scanFolder(classLoader, resource, path.split("\\.")[0]);
+        System.out.println(path);
+        scanPlugin(classLoader, resource, path.split("\\.")[0]);
     }
 
+    /**
+     * 插件扫描
+     *
+     * @param classLoader classLoader
+     * @param resource    资源
+     * @param packageName 包
+     */
+    private void scanPlugin(ClassLoader classLoader, URL resource, String packageName) {
+        File file = new File(resource.getFile());
 
+        System.out.println("file: ===> " + file);
+        System.out.println("packageName: ===> " + packageName);
+
+
+    }
 
     /**
      * 递归文件夹下的bean
+     *
      * @param classLoader classLoader
-     * @param resource URL
+     * @param resource    URL
      */
-    private void scanFolder(ClassLoader classLoader, URL resource,String packageName) {
+    private void scanFolder(ClassLoader classLoader, URL resource, String packageName) {
         File file = new File(resource.getFile());
         if (file.isDirectory()){
             for (File fi: Objects.requireNonNull(file.listFiles())){
